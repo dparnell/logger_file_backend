@@ -86,24 +86,41 @@ defmodule LoggerFileBackend do
     end
   end
 
-  defp rename_file(path, keep) do
+  defp rename_file(path, keep, params) do
+    suffix = case params[:compress] do
+               true -> ".gz"
+               _ -> ""
+             end
 
-    File.rm("#{path}.#{keep}")
+    File.rm("#{path}.#{keep}#{suffix}")
 
-    Enum.map(keep-1..1, fn(x) -> File.rename("#{path}.#{x}", "#{path}.#{x+1}") end)
+    Enum.map(keep-1..1, fn(x) -> File.rename("#{path}.#{x}#{suffix}", "#{path}.#{x+1}#{suffix}") end)
 
-    case File.rename(path, "#{path}.1") do
-      :ok -> false
-      _   -> true
+    new_path = "#{path}.1#{suffix}"
+    case params[:compress] do
+      true ->
+        {:ok, data} = File.read(path)
+        compressed = :zlib.gzip(data)
+        with :ok <- File.write(new_path, compressed),
+             :ok <- File.rm(path) do
+          true
+        else
+          _ ->
+            false
+        end
+      _ ->
+        case File.rename(path, new_path) do
+          :ok -> false
+          _   -> true
+        end
     end
-
   end
 
-  defp rotate(path, %{max_bytes: max_bytes, keep: keep }) when is_integer(max_bytes) and is_integer(keep) and keep > 0 do
+  defp rotate(path, %{max_bytes: max_bytes, keep: keep } = rotate_params) when is_integer(max_bytes) and is_integer(keep) and keep > 0 do
 
     case :file.read_file_info(path, [:raw]) do
       {:ok, file_info(size: size)} ->
-        if size >= max_bytes, do:  rename_file(path, keep) , else: true
+        if size >= max_bytes, do:  rename_file(path, keep, rotate_params) , else: true
       _ ->
         true
     end
@@ -111,8 +128,6 @@ defmodule LoggerFileBackend do
   end
 
   defp rotate(_path, nil), do: true
-
-
 
   defp open_log(path) do
     case (path |> Path.dirname |> File.mkdir_p) do
