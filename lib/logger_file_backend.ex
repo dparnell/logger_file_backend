@@ -32,8 +32,8 @@ defmodule LoggerFileBackend do
   end
 
 
-  def handle_event({level, _gl, {Logger, msg, ts, md}}, %{level: min_level, metadata_filter: metadata_filter} = state) do
-    if (is_nil(min_level) or Logger.compare_levels(level, min_level) != :lt) and metadata_matches?(md, metadata_filter) do
+  def handle_event({level, _gl, {Logger, msg, ts, md}} = event, %{level: min_level, metadata_filter: metadata_filter, filter: filter} = state) do
+    if (is_nil(min_level) or Logger.compare_levels(level, min_level) != :lt) and metadata_matches?(md, metadata_filter) and filter_matches?(filter, event) do
       log_event(level, msg, ts, md, state)
     else
       {:ok, state}
@@ -157,7 +157,11 @@ defmodule LoggerFileBackend do
     end
   end
 
-
+  @doc false
+  def filter_matches?(nil, _event), do: true
+  def filter_matches?(filter, event) do
+    filter.(event)
+  end
 
   defp take_metadata(metadata, :all), do: metadata
 
@@ -182,7 +186,7 @@ defmodule LoggerFileBackend do
 
 
   defp configure(name, opts) do
-    state = %{name: nil, path: nil, io_device: nil, inode: nil, format: nil, level: nil, metadata: nil, metadata_filter: nil, rotate: nil}
+    state = %{name: nil, path: nil, io_device: nil, inode: nil, format: nil, level: nil, metadata: nil, metadata_filter: nil, rotate: nil, filter: nil}
     configure(name, opts, state)
   end
 
@@ -198,8 +202,9 @@ defmodule LoggerFileBackend do
     path            = Keyword.get(opts, :path)
     metadata_filter = Keyword.get(opts, :metadata_filter)
     rotate          = Keyword.get(opts, :rotate)
+    filter          = Keyword.get(opts, :filter)
 
-    %{state | name: name, path: path, format: format, level: level, metadata: metadata, metadata_filter: metadata_filter, rotate: rotate}
+    %{state | name: name, path: path, format: format, level: level, metadata: metadata, metadata_filter: metadata_filter, rotate: rotate, filter: filter}
   end
 
   @replacement "�"
